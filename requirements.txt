@@ -1,0 +1,29 @@
+# Azure SDKs
+azure-search-documents
+azure-identity
+azure-ai-documentintelligence
+azure-storage-blob
+
+# Microsoft Graph
+msal
+requests
+
+# Document Processing
+pdfminer.six
+python-docx
+python-pptx
+openpyxl
+Pillow
+pytesseract
+
+# OpenAI SDK (for embeddings)
+openai
+
+# Utilities
+python-dotenv
+tqdm
+retry
+
+# Jupyter
+jupyter
+ipykernel
