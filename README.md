@@ -186,6 +186,20 @@ AZURE_OPENAI_EMBEDDING_DEPLOYMENT=text-embedding-ada-002
 jupyter notebook notebooks/
 ```
 
+## Entra ID / Graph セキュリティ設計とバッチ詳細手順（新規）
+
+Entra ID のアプリ登録（Graph API 実行用）の詳細手順、セキュリティ設計、
+および Azure 基盤バッチの超詳細手順（**同一テナント / 別テナント(マルチテナント)**）を以下に追加しました。
+
+- `docs/entra-graph-security-and-batch-runbook.md`
+
+この Runbook には、次を含みます。
+- Delegated / App-only / Managed Identity / OIDC の使い分け
+- `Sites.Selected` を軸にした最小権限設計
+- 同一テナント構成の構築ステップ
+- マルチテナント構成の構築ステップ（admin consent とサイト割当の注意点含む）
+- 運用監査・アラート・受け入れテスト観点
+
 ## ノートブック構成
 
 ### 共通
