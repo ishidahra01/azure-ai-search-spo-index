@@ -422,7 +422,7 @@
            @{
                application = @{
                    id = "{Client-ID}"
-                   displayName = "sp-graph-ingest-crosstenent-prod"
+                   displayName = "sp-graph-ingest-crosstenant-prod"
                }
            }
        )
