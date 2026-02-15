@@ -375,7 +375,7 @@
 
 1. **Tenant A でアプリ登録**
    - Azure Portal > Microsoft Entra ID（Tenant A） > アプリの登録 > 新規登録
-   - 名前: `sp-graph-ingest-crosstenant-prod`
+   - 名前: `sp-graph-ingest-cross-tenant-prod`
    - サポートされるアカウント種類: **任意の組織ディレクトリ内のアカウント（任意の Microsoft Entra ID テナント - マルチテナント）**
    - リダイレクト URI: 不要（App-only）
    - 登録後、以下を記録:
@@ -422,7 +422,7 @@
            @{
                application = @{
                    id = "{Client-ID}"
-                   displayName = "sp-graph-ingest-crosstenant-prod"
+                   displayName = "sp-graph-ingest-cross-tenant-prod"
                }
            }
        )
