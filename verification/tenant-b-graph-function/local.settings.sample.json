@@ -1,0 +1,14 @@
+{
+  "IsEncrypted": false,
+  "Values": {
+    "AzureWebJobsStorage": "UseDevelopmentStorage=true",
+    "FUNCTIONS_WORKER_RUNTIME": "python",
+    "TENANT_A_ID": "<tenant-a-id>",
+    "APP_CLIENT_ID": "<tenant-b-multitenant-app-client-id>",
+    "MANAGED_IDENTITY_CLIENT_ID": "<tenant-b-uami-client-id>",
+    "SP_HOSTNAME": "<tenant-a>.sharepoint.com",
+    "SP_SITE_PATHS": "/sites/hr,/sites/legal",
+    "MAX_ITEMS_PER_SITE": "20",
+    "GRAPH_SCAN_SCHEDULE": "0 */30 * * * *"
+  }
+}

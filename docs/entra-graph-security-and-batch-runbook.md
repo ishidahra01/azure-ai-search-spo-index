@@ -459,6 +459,47 @@
    - アラート設定（認証失敗、権限変更）
    - 定期的な権限レビュー（四半期ごと推奨）
 
+9. **このリポジトリでの検証実装（Tenant A デプロイ用）**
+   - 検証用 Function: `verification/tenant-a-graph-function`
+   - 実装内容:
+     - HTTP Trigger: `GET /api/graph/tenant-scan`
+     - Timer Trigger: `%GRAPH_SCAN_SCHEDULE%`
+     - 取得データ: ファイル URL、タイトル、サイズ、作成/更新日時、親パスなど
+   - セットアップ:
+     ```powershell
+     cd verification/tenant-a-graph-function
+     python -m venv .venv
+     . .\.venv\Scripts\Activate.ps1
+     pip install -r requirements.txt
+     Copy-Item local.settings.sample.json local.settings.json
+     ```
+   - `local.settings.json` の主な値:
+     ```json
+     {
+       "Values": {
+         "GRAPH_AUTH_MODE": "managed_identity",
+         "SP_HOSTNAME": "<tenant-b>.sharepoint.com",
+         "SP_SITE_PATHS": "/sites/hr,/sites/legal",
+         "GRAPH_SCAN_SCHEDULE": "0 */30 * * * *"
+       }
+     }
+     ```
+   - ローカル実行:
+     ```powershell
+     func start
+     curl "http://localhost:7071/api/graph/tenant-scan"
+     ```
+   - 期待結果:
+     - 200 応答で、`siteId` / `siteTitle` / `items[].url` / `items[].title` / `items[].lastModifiedDateTime` が返る
+   - 負のテスト（403 確認）:
+     - `SP_SITE_PATHS` に未割当サイト（例: `/sites/not-granted`）を追加して再実行
+     - Graph 呼び出しが 403 になることを確認
+   - Azure へデプロイ（Tenant A）:
+     ```powershell
+     cd verification/tenant-a-graph-function
+     func azure functionapp publish <function-app-name>
+     ```
+
 #### 5.3.5.4 この構成の利点と注意点
 
 **利点:**

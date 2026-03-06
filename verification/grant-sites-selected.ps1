@@ -1,19 +1,19 @@
 # ====== 設定値 ======
-$TenantB  = "<Tenant-B-ID>"
-$ClientId = "<Client-ID>"
-$spHost   = "<tenantB>.sharepoint.com"
-$sitePath = "/sites/<sitename>"
+$Tenant  = "<your-tenant-id>"
+$ClientId = "<your-client-id>"
+$spHost   = "<your-tenant>.sharepoint.com"
+$sitePath = "/sites/<your-site>"
 
 # ====== モジュール確認 ======
 if (-not (Get-Module -ListAvailable -Name Microsoft.Graph)) {
     Install-Module Microsoft.Graph -Scope CurrentUser -Force
 }
 
-# ====== Tenant B に接続 ======
-Connect-MgGraph -TenantId $TenantB -Scopes "Sites.FullControl.All"
+# ====== Tenant に接続 ======
+Connect-MgGraph -TenantId $Tenant -Scopes "Sites.FullControl.All"
 
 # ====== サイト取得 ======
-$site = Get-MgSite -SiteId "$spHost:$sitePath"
+$site = Get-MgSite -SiteId "${spHost}:${sitePath}"
 
 Write-Host "Site ID:" $site.Id
 

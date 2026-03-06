@@ -1,0 +1,9 @@
+azure-functions
+azure-identity
+requests
+cffi
+pycparser
+pdfminer.six
+python-docx
+python-pptx
+openpyxl
