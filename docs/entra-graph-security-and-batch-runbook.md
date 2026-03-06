@@ -301,316 +301,200 @@
 
 ## 5.3 パターンB: Azure テナントと Graph データテナントが別（マルチテナント）
 
-### 5.3.1 典型構成
+### 5.3.1 なぜこの構成が必要か（設計背景と機能制約）
+
+#### テナント分離が発生する背景
+
+Azure の実行基盤（Functions など）と SharePoint Online の組織が **異なる Entra ID テナント** に属するケースがあります。
+
+典型例:
+- 社内の IT 部門テナント（テナントB）から、事業部門テナント（テナントA）の SharePoint にアクセス
+- SaaS プロバイダー（テナントB）が顧客テナント（テナントA）の SharePoint にアクセス
+- グループ企業（テナントB）が親会社テナント（テナントA）の SharePoint にアクセス
+
+#### 本ドキュメントのテナント定義
+
+| 名称 | 役割 |
+|------|------|
+| **テナントA** | 取得元の SharePoint Online (SPO) が存在するテナント |
+| **テナントB** | SPO のデータを取得するアプリの実行基盤があるテナント |
+
+#### Managed Identity のクロステナント制約（重要）
+
+マルチテナント設計を理解する上で最も重要な技術制約が **Managed Identity（MI）のクロステナント制限**です。
 
 ```text
-[Azure Function (テナントB)] -> [Entra App (テナントA, multi-tenant)] -> [Graph(テナントA)] -> [SharePoint(テナントA)]
+【失敗する構成（なぜ動かないのか）】
+
+テナントB の Azure Functions
+  └ Managed Identity (MI)
+       └ get_token() → テナントB の Entra ID がトークンを発行
+                             ↓
+                       テナントA の Graph API へ渡す
+                             ↓
+                       ❌ 認証失敗
+                          （テナントA はこのトークンを受け入れない）
 ```
 
-- テナントA: SharePoint/Graph データを持つテナント（取得元の SPO が存在するテナント）
-- テナントB: 実行基盤を持つテナント（SPO のデータを取得するアプリの実行基盤があるテナント）
+- テナントB の MI が取得するアクセストークンは、**テナントB の Entra ID が発行したもの**
+- テナントA の Graph API（`https://graph.microsoft.com`）を呼び出すには、**テナントA が発行したトークン**が必要
+- テナントB 発行のトークンをそのまま Graph に渡しても、テナントA のリソースへの権限がないため認証は失敗する
 
-### 5.3.2 重要ポイント
+この制約を回避するために、以下のいずれかの認証方式が必要です:
 
-- **権限同意（admin consent）は テナントA 側で必要**
-- `Sites.Selected` のサイト割当も テナントA 側で実施
-- 実行主体の真正性は、Federation/OIDC または厳格な credential 運用で担保
-
-### 5.3.3 手順（推奨フロー）
-
-1. **テナントA でアプリ登録**
-   - マルチテナント設定
-   - Graph Application Permission に `Sites.Selected`
-2. **テナントA 管理者で admin consent**
-3. **テナントA で Sites.Selected 割当**
-   - 対象 SharePoint サイトごとに read を付与
-4. **テナントB の実行基盤（Function）準備**
-   - Managed Identity を有効化
-5. **認証方式を決定**
-   - 推奨: OIDC Federation（workload identity）
-   - 代替: 証明書（Key Vault 保管）
-   - 非推奨: Client Secret
-6. **Federated Credential 設定（テナントA のアプリ側）**
-   - issuer / subject / audience を実行基盤に合わせて正確に設定
-   - subject は可能な限り限定的に（環境・ワークロード単位）
-7. **接続テスト**
-   - トークン取得
-   - Graph `/sites` 参照
-   - 許可外サイトで 403 になることを確認（負のテスト）
-8. **本番運用設定**
-   - 監査ログを テナントA/テナントB 双方で保全
-   - 片側障害時の再実行方針（RPO/RTO）を決定
-
-### 5.3.4 マルチテナントでの失敗パターン
-
-- 同意テナントを誤る（テナントB で同意して テナントA で未同意）
-- Sites.Selected を付与しただけで割当していない
-- issuer/subject/audience の不一致
-- テナントID固定ミス（アプリ設定値の取り違え）
+| 方式 | 概要 | 推奨度 |
+|------|------|--------|
+| Workload Identity Federation (FIC) | テナントB の UAMI トークンを Client Assertion として使い、テナントA 向けトークンを取得 | ★★★ 推奨（Secret 不要） |
+| Client Secret / 証明書 | テナントA エンドポイント向けにクライアント認証でトークンを直接取得 | ★★ 代替（Secret 管理が必要） |
 
 ---
 
-### 5.3.5 パターンB 別方式: テナントB 側にアプリ登録（マルチテナント・クロステナント認証）
+### 5.3.2 全体設計と2つのアプリ登録パターン
 
-#### 5.3.5.1 構成
+マルチテナント構成では、**アプリ登録をどちらのテナントに置くか**で2つのパターンがあります。
 
 ```text
-[Azure Function (テナントB)] -> [Entra App (テナントB, multi-tenant)] -> [Graph(テナントA)] -> [SharePoint(テナントA)]
+                   ┌─────────────────────────────────────────────────────┐
+                   │                  マルチテナント構成                    │
+                   │                                                     │
+  テナントB         │         テナントA                                     │
+  (実行基盤)        │         (SPO データ)                                  │
+                   │                                                     │
+  ┌─────────────┐  │  ┌──────────────────────┐   ┌───────────────────┐  │
+  │Azure Function│  │  │ Entra App            │   │ SharePoint Online  │  │
+  │  + UAMI     │──┼──│ (Multitenant)        │──→│  Sites.Selected   │  │
+  └─────────────┘  │  │  + Federated Cred.   │   └───────────────────┘  │
+                   │  └──────────────────────┘                           │
+  パターンA:         │  ↑ アプリ登録はテナントA 側                           │
+  (WIF, Secret不要) │                                                     │
+  ─────────────────│─────────────────────────────────────────────────────│
+  ┌─────────────┐  │                        ┌───────────────────┐       │
+  │Azure Function│  │  (Enterprise App       │ SharePoint Online  │       │
+  │  + Entra App│──┼──  として表示)     ──→  │  Sites.Selected   │       │
+  │  (Multitenant│  │       ↑ admin consent  └───────────────────┘       │
+  │  + Secret)  │  │  テナントA 側で必要                                  │
+  └─────────────┘  │                                                     │
+  パターンB:         │                                                     │
+  (Client Secret)  │                                                     │
+                   └─────────────────────────────────────────────────────┘
 ```
 
-- テナントB: 実行基盤を持つテナント（アプリも テナントB に登録）
-- テナントA: SharePoint/Graph データを持つテナント
+| | パターンA | パターンB |
+|---|---|---|
+| **アプリ登録場所** | テナントA（データ側） | テナントB（実行側） |
+| **認証方式** | Workload Identity Federation（UAMI） | Client Secret / 証明書 |
+| **Secret 不要** | ✅ | ❌ |
+| **複数テナント接続** | テナントごとにアプリ登録が必要 | 1つのアプリで複数テナント対応可 |
+| **どちらも必須** | テナントA での admin consent + Sites.Selected 割当 ||
 
-この方式では、**アプリ登録を実行基盤側（テナントB）に配置**し、テナントA のデータにクロステナントアクセスします。
+---
 
-#### 5.3.5.2 重要ポイント
+### 5.3.3 パターンA: テナントA 側にアプリ登録（Workload Identity Federation）
 
-- **アプリ登録は テナントB 側**（実行基盤と同じテナント）
-- **マルチテナント設定必須**（他テナントのリソースにアクセスするため）
-- **権限同意（admin consent）は テナントA 側で必要**
-- `Sites.Selected` のサイト割当も テナントA 側で実施
-- **Managed Identity（MI）によるクロステナント直接認証は成立しない**:
-  - テナントB の MI が取得するトークンは、テナントB の Entra ID が発行したもの
-  - テナントA の Graph API を呼び出すには、テナントA が発行したトークンが必要
-  - MI トークンをそのまま Graph に渡しても、テナントA のリソースへの権限がないため認証は失敗する
-  - **クロステナント検証では `client_secret` 方式（テナントA エンドポイント向け）を使用すること**
+```text
+[テナントB: Azure Functions + UAMI]
+      │
+      │ 1. UAMI で api://AzureADTokenExchange トークン取得
+      │ 2. そのトークンを Client Assertion として使用
+      ▼
+[テナントA: Entra App (Multitenant) + Federated Credential → UAMI]
+      │  admin consent 済み
+      │  Sites.Selected 割当済み
+      ▼
+[テナントA: Graph API → SharePoint Online]
+```
 
-#### 5.3.5.3 詳細手順
+**設計のポイント:**
+- テナントA 側でアプリを管理するため、データガバナンスが明確
+- Workload Identity Federation により Client Secret / 証明書が不要
+- Federated Credential で テナントB の UAMI と紐付け（issuer/subject/audience の正確な設定が必要）
 
-1. **テナントB でアプリ登録**
-   - Azure Portal > Microsoft Entra ID（テナントB） > アプリの登録 > 新規登録
-   - 名前: `sp-graph-ingest-cross-tenant-prod`
-   - サポートされるアカウント種類: **任意の組織ディレクトリ内のアカウント（任意の Microsoft Entra ID テナント - マルチテナント）**
-   - リダイレクト URI: 不要（App-only）
-   - 登録後、以下を記録:
-     - Application (client) ID
-     - Directory (tenant) ID（テナントB の ID）
+**詳細手順**: [`verification/tenant-b-graph-function/`](../verification/tenant-b-graph-function/)
 
-2. **テナントB でアプリ設定**
-   - API のアクセス許可 > アクセス許可の追加
-   - Microsoft Graph > Application permissions
-   - `Sites.Selected` を追加
-   - 「管理者の同意を与えます」は**ここでは実行しない**（このアプリは テナントA のリソースにアクセスするため、テナントB のリソースに対する権限は不要。権限同意は後述の手順3で テナントA 側の管理者により実施）
+---
 
-3. **テナントA で管理者同意（Admin Consent）を取得**
-   
-   方法A: 同意 URL を使用（推奨）
+### 5.3.4 パターンB: テナントB 側にアプリ登録（Client Secret / 証明書）
+
+```text
+[テナントB: Azure Functions + Entra App (Multitenant) + Client Secret]
+      │
+      │ 1. テナントA エンドポイント向けにトークン取得
+      │    (https://login.microsoftonline.com/{テナントA-ID}/oauth2/v2.0/token)
+      ▼
+[テナントA: Enterprise Application（外部アプリとして表示）]
+      │  admin consent 済み
+      │  Sites.Selected 割当済み
+      ▼
+[テナントA: Graph API → SharePoint Online]
+```
+
+**設計のポイント:**
+- テナントB 側でアプリのライフサイクルを一元管理
+- 複数の SharePoint テナント（テナントA, テナントA', ...）にアクセスする場合、アプリは1つで対応可能（各テナントで admin consent を取得）
+- **Managed Identity の直接利用は不可**（テナントB の MI トークンはテナントA の Graph に届かない。テナントA エンドポイント向けの `client_secret` 認証が必要）
+- 本番環境では Client Secret を Key Vault 参照で管理すること
+
+**詳細手順**: [`verification/tenant-b-simple-function/`](../verification/tenant-b-simple-function/)
+
+---
+
+### 5.3.5 共通の必須作業（どちらのパターンでも必要）
+
+テナントA 側で必ず実施する:
+
+1. **Admin Consent の実行**
    ```
    https://login.microsoftonline.com/{テナントA-ID}/adminconsent?client_id={Client-ID}
    ```
-   - `{テナントA-ID}`: テナントA のテナント ID
-   - `{Client-ID}`: 手順1で取得したアプリの Client ID
-   - テナントA の全体管理者またはアプリケーション管理者でこの URL にアクセス
+   - テナントA の全体管理者またはアプリケーション管理者が実行
    - 同意画面で「この組織の代理として同意する」をチェックして承認
-   
-   方法B: テナントA の Entra ID ポータルから同意
-   - テナントA のポータルで Microsoft Entra ID > エンタープライズアプリケーション
-   - 手順1で作成したアプリを検索（Client ID で検索）
-   - アクセス許可 > 「管理者の同意を与えます」を実行
 
-4. **テナントA で Sites.Selected 割当**
-   - Graph API を使用して対象サイトに権限を付与
-   - PowerShell / Graph Explorer などを利用
+2. **Sites.Selected のサイト割当**（付与だけでは不可。対象サイトへの明示割当が必要）
    ```powershell
-   # 例: PowerShell + Microsoft.Graph モジュール
+   # PowerShell + Microsoft.Graph モジュール を使った割当例
+   # 詳細は verification/tenant-b-graph-function/grant-sites-selected.ps1 を参照
    Connect-MgGraph -TenantId {テナントA-ID} -Scopes "Sites.FullControl.All"
-   
-   # サイトID取得
-   $siteUrl = "https://{tenant}.sharepoint.com/sites/{sitename}"
-   $site = Get-MgSite -Search $siteUrl
-   
-   # アプリに read 権限を付与
+   $site = Get-MgSite -Search "https://{tenant}.sharepoint.com/sites/{sitename}"
    $params = @{
        roles = @("read")
-       grantedToIdentities = @(
-           @{
-               application = @{
-                   id = "{Client-ID}"
-                   displayName = "sp-graph-ingest-cross-tenant-prod"
-               }
-           }
-       )
+       grantedToIdentities = @(@{ application = @{ id = "{Client-ID}"; displayName = "{AppName}" } })
    }
    New-MgSitePermission -SiteId $site.Id -BodyParameter $params
    ```
 
-5. **テナントB の Function App 設定**
-   - アプリケーション設定（環境変数）:
-     ```properties
-     GRAPH_TENANT_ID={テナントA-ID}       # Graph データが存在するテナント（テナントA）
-     GRAPH_CLIENT_ID={Client-ID}          # テナントB に登録したアプリの Client ID
-     GRAPH_CLIENT_SECRET={Client-Secret}  # テナントB のアプリのシークレット（本番は Key Vault 参照推奨）
-     GRAPH_AUTH_MODE=client_secret        # クロステナントでは client_secret を使用
-     SP_HOSTNAME={tenant}.sharepoint.com  # テナントA の SharePoint
-     SP_SITE_PATHS=/sites/hr,/sites/legal
-     ```
-   > **注意**: `GRAPH_AUTH_MODE=managed_identity` はクロステナントシナリオでは機能しません。
-   > テナントB の MI が取得するトークンはテナントB 発行であり、テナントA の Graph リソースへのアクセス権を持ちません。
-   > クロステナントアクセスには `client_secret` を使用してください。
-   >
-   > **本番環境での Secret 管理**: `GRAPH_CLIENT_SECRET` の値は Key Vault 参照を使用することを強く推奨します。
-   > 例: `@Microsoft.KeyVault(SecretUri=https://<vault-name>.vault.azure.net/secrets/<secret-name>)`
-
-6. **認証フロー設定（`client_secret` 方式）**
-   - Function コード内で MSAL を使用してトークンを取得
-   - 認証エンドポイント: `https://login.microsoftonline.com/{テナントA-ID}` （テナントA のエンドポイント）
-   - スコープ: `https://graph.microsoft.com/.default`
-   - 取得したトークンはテナントA が発行したものとなり、テナントA の Graph API へのアクセスが可能（マルチテナント同意済みのため）
-   - **MI 直接利用の制約**: Managed Identity で `get_token` を呼ぶと、テナントB が発行したトークンになるため、テナントA のリソースには到達できない
-
-7. **接続テスト**
-   - 小規模データで実行テスト
-   - トークン取得の確認
-   - Graph API `/sites` で テナントA のサイトにアクセス
-   - 許可されたサイトのみアクセス可能、未割当サイトで 403 を確認
-
-8. **本番運用設定**
-   - テナントA と テナントB 双方で監査ログを有効化
-   - アラート設定（認証失敗、権限変更）
-   - 定期的な権限レビュー（四半期ごと推奨）
-
-9. **このリポジトリでの検証実装（テナントB デプロイ用）**
-   - 検証用 Function: `verification/tenant-b-simple-function`（Client Secret 方式によるクロステナント検証）
-   - 実装内容:
-     - HTTP Trigger: `GET /api/graph/tenant-scan`
-     - Timer Trigger: `%GRAPH_SCAN_SCHEDULE%`
-     - 取得データ: ファイル URL、タイトル、サイズ、作成/更新日時、親パスなど
-   - セットアップ:
-     ```powershell
-     cd verification/tenant-b-simple-function
-     python -m venv .venv
-     . .\.venv\Scripts\Activate.ps1
-     pip install -r requirements.txt
-     Copy-Item local.settings.sample.json local.settings.json
-     ```
-   - `local.settings.json` の主な値:
-     ```json
-     {
-       "Values": {
-         "GRAPH_AUTH_MODE": "client_secret",
-         "GRAPH_TENANT_ID": "<テナントA-ID>",
-         "GRAPH_CLIENT_ID": "<テナントB-アプリ-client-id>",
-         "GRAPH_CLIENT_SECRET": "<テナントB-アプリ-client-secret>",
-         "SP_HOSTNAME": "<tenant-a>.sharepoint.com",
-         "SP_SITE_PATHS": "/sites/hr,/sites/legal",
-         "GRAPH_SCAN_SCHEDULE": "0 */30 * * * *"
-       }
-     }
-     ```
-   - ローカル実行:
-     ```powershell
-     func start
-     curl "http://localhost:7071/api/graph/tenant-scan"
-     ```
-   - 期待結果:
-     - 200 応答で、`siteId` / `siteTitle` / `items[].url` / `items[].title` / `items[].lastModifiedDateTime` が返る
-   - 負のテスト（403 確認）:
-     - `SP_SITE_PATHS` に未割当サイト（例: `/sites/not-granted`）を追加して再実行
-     - Graph 呼び出しが 403 になることを確認
-   - Azure へデプロイ（テナントB）:
-     ```powershell
-     cd verification/tenant-b-simple-function
-     func azure functionapp publish <function-app-name>
-     ```
-
-#### 5.3.5.4 この構成の利点と注意点
-
-**利点:**
-- テナントB 側で完結する管理（アプリライフサイクル、認証情報）
-- テナントB のセキュリティポリシー（Conditional Access for Workload Identity など）を直接適用可能
-- 複数の Graph データテナントに接続する場合、アプリは1つで管理可能（各テナントで admin consent を取得）
-
-**注意点:**
-- マルチテナント設定が必須（設定ミスで動作しないリスク）
-- テナントA での admin consent プロセスが追加で必要
-- テナントA 側の管理者が同意内容を理解している必要がある
-- テナントA 側からはエンタープライズアプリケーションとして表示される（外部アプリ扱い）
-- **Managed Identity（MI）はクロステナントでは直接利用できない**: テナントB の MI が発行するトークンはテナントB のエンドポイント発行であり、テナントA のリソースには到達しない。クロステナント検証では `client_secret` 方式を使用すること。
-
-#### 5.3.5.5 推奨される使用場面
-
-- 実行基盤（Azure Functions など）が特定のテナント（テナントB）に存在
-- 複数の外部 SharePoint テナント（テナントA, テナントA', テナントA''...）にアクセスする必要がある
-- 認証情報管理を実行基盤側のテナント（テナントB）で集中管理したい
-- `client_secret` または証明書方式を許容できる運用環境
-- テナントB 側の Workload Identity（FIC）の制御を活用したい（高度な構成）
+3. **監査ログの保全設定**（テナントA / テナントB 双方）
 
 ---
 
-### 5.3.6 パターン比較: テナントA 登録 vs テナントB 登録
+### 5.3.6 パターンの選択基準
 
-#### 5.3.6.1 比較表
+**パターンA（テナントA 登録）を選択すべきケース:**
 
-| 項目 | テナントA 登録（5.3.3） | テナントB 登録（5.3.5） |
-|------|------------------------|------------------------|
-| **アプリ登録場所** | Graph データテナント（テナントA） | 実行基盤テナント（テナントB） |
-| **マルチテナント設定** | 必須 | 必須 |
-| **Admin Consent 場所** | テナントA（登録と同じ） | テナントA（別テナント） |
-| **Managed Identity 利用** | 別テナントのアプリのため<br/>Federated Credential 必要※1 | **直接利用は不可**（クロステナント MI 認証は成立しない）<br/>→ `client_secret` または FIC トークン交換が必要※2 |
-| **認証情報管理** | テナントA で管理<br/>（データ側で集中） | テナントB で管理<br/>（実行側で集中） |
-| **複数テナント接続** | テナントごとにアプリ登録が必要 | 1つのアプリで複数テナント対応可能<br/>（各テナントで consent） |
-| **セキュリティ境界** | データテナント側で制御しやすい | 実行テナント側で制御しやすい |
-| **テナントA の管理負荷** | アプリ管理も含めて高い | consent と Sites.Selected のみ |
-| **テナントB の管理負荷** | 低い（認証のみ） | アプリ管理を含めて高い |
+- データガバナンス優先: SharePoint データの所有者（テナントA）がアプリのライフサイクルも管理したい
+- Secret 不要構成を実現したい（Workload Identity Federation を活用）
+- 単一テナント連携のみ（テナントB から テナントA への接続のみ）
+- データ漏洩時の責任所在をデータ側テナントに明確化したい
 
-※1: テナントA のアプリに Federated Credential（Workload Identity）を設定し、テナントB の Managed Identity と紐付ける必要があります（5.3.3 手順6参照）。
+**パターンB（テナントB 登録）を選択すべきケース:**
 
-※2: テナントB の MI トークンはテナントB のエンドポイントが発行したものであり、テナントA のリソースへのアクセス権がありません。クロステナントシナリオでは `client_secret` によるテナントA エンドポイント向けトークン取得が実用的な方法です。
+- 複数テナント接続が必要: テナントB の実行基盤から複数の SharePoint テナントにアクセス
+- 実行基盤側で認証管理を集中したい（アプリのライフサイクル管理を実行側で統一）
+- テナントA 側の管理負荷を軽減したい（テナントA は consent と Sites.Selected のみ）
+- SaaS 提供者（テナントB）が複数顧客テナント（テナントA）に接続するシナリオ
 
-> 注記: どちらの方式も、クロステナントでのトークン取得を実現するためにマルチテナント設定が必要です。
+**迷った場合の推奨**: まずパターンA（テナントA 登録 + Workload Identity Federation）で開始し、複数テナント接続が必要になった時点でパターンB に移行する。
 
-#### 5.3.6.2 使い分けの判断基準
+> 重要: どちらのパターンでも、テナントA での admin consent と Sites.Selected 割当は必須です。
 
-**テナントA 登録（5.3.3）を選択すべきケース:**
+---
 
-1. **データガバナンスを優先する場合**
-   - SharePoint データの所有者（テナントA）がアプリのライフサイクルも管理したい
-   - データ側のセキュリティポリシーを厳格に適用したい
-   - 外部の実行基盤からのアクセスを明確に「外部アクセス」として扱いたい
+### 5.3.7 マルチテナントでの失敗パターン
 
-2. **単一テナント連携の場合**
-   - テナントB から テナントA への接続のみ
-   - 複数テナント対応の予定がない
-
-3. **データテナント側の責任範囲を明確にする場合**
-   - データ漏洩時の責任所在をデータ側テナントに明確化
-   - コンプライアンス要件でデータ側の管理が求められる
-
-**テナントB 登録（5.3.5）を選択すべきケース:**
-
-1. **複数テナント接続が必要な場合**
-   - テナントB の実行基盤から複数の SharePoint テナント（テナントA, テナントA', テナントA''...）にアクセス
-   - 統合データレイク・統合検索などのシナリオ
-
-2. **実行基盤側で認証管理を集中したい場合**
-   - アプリのライフサイクル管理を実行側で統一
-   - `client_secret` や証明書など、テナントB で管理する credential を使用
-
-3. **テナントA 側の管理負荷を軽減したい場合**
-   - データ側テナント（テナントA）はデータとサイト権限の管理に専念
-   - アプリ登録・認証情報管理は実行側に委譲
-
-4. **SaaS・マルチテナント SaaS として提供する場合**
-   - サービス提供者（テナントB）が複数の顧客テナントに接続
-   - 顧客側（テナントA）にはアプリ管理を要求しない設計
-
-#### 5.3.6.3 ハイブリッド構成の検討
-
-実務では以下のような組み合わせも検討されます:
-
-- **Phase 1**: テナントA 登録でスタート（PoC・小規模）
-- **Phase 2**: テナントB 登録に移行（本番・拡張時）
-- **併用**: 重要度の高いテナントは テナントA 登録、その他は テナントB 登録
-
-いずれの方式でも、**Sites.Selected の適切な割当**と**監査ログの保全**が最重要です。
-
-#### 5.3.6.4 推奨構成（結論）
-
-- **データガバナンス優先・単一テナント接続**: テナントA 登録（5.3.3）
-- **マルチテナント接続・実行基盤統合管理**: テナントB 登録（5.3.5）
-- **迷った場合**: まず テナントA 登録で開始し、必要に応じて テナントB 登録に移行
-
-> 重要: どちらの方式でも、テナントA での admin consent と Sites.Selected 割当は必須です。
+- **同意テナントを誤る**: テナントB で同意して テナントA で未同意（consent は必ずテナントA 側で実行）
+- **Sites.Selected の割当漏れ**: 権限を付与しただけで、対象サイトへの明示割当を忘れる
+- **issuer/subject/audience の不一致**: Federated Credential の設定値と実行基盤の値が合っていない
+- **テナントID の取り違え**: `GRAPH_TENANT_ID` / `TENANT_A_ID` にテナントB の ID を誤設定
+- **MI をそのまま使う**: テナントB の MI トークンをテナントA の Graph にそのまま渡して認証失敗（[5.3.1 参照](#531-なぜこの構成が必要か設計背景と機能制約)）
 
 ---
 

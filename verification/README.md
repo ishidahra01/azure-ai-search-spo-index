@@ -15,13 +15,13 @@
 
 ### [`tenant-b-simple-function/`](./tenant-b-simple-function/)
 
-- **対応セクション**: Runbook [5.3.5](../docs/entra-graph-security-and-batch-runbook.md)（テナントB 側アプリ登録）
-- **認証方式**: Managed Identity または Client Secret
+- **対応セクション**: Runbook [5.3.4](../docs/entra-graph-security-and-batch-runbook.md)（パターンB: テナントB 側アプリ登録）
+- **認証方式**: Client Secret
 - **概要**: シンプルな認証でクロステナントアクセスを検証。PoC や初期検証に最適。
 
 ### [`tenant-b-graph-function/`](./tenant-b-graph-function/)
 
-- **対応セクション**: Runbook [5.3.3](../docs/entra-graph-security-and-batch-runbook.md)（テナントA 側アプリ登録）
+- **対応セクション**: Runbook [5.3.3](../docs/entra-graph-security-and-batch-runbook.md)（パターンA: テナントA 側アプリ登録）
 - **認証方式**: Workload Identity Federation (UAMI)
 - **概要**: Secret 不要の本番向け認証方式でクロステナントアクセスを検証。
 
@@ -30,9 +30,9 @@
 ```
 まず試したい / PoC
   └→ tenant-b-simple-function
-        ・Managed Identity または Client Secret で手軽に動作確認
+        ・Client Secret でクロステナントの疎通確認
         ・テナントA で admin consent と Sites.Selected 割当が必要
-        ・クロステナントで動かない場合は client_secret で先に疎通確認
+        ・シンプルで手軽に動作確認できる
 
 本番環境 / Secret 不要構成
   └→ tenant-b-graph-function
