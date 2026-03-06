@@ -1,11 +1,11 @@
 """
-TenantB Functions → TenantA Graph (SharePoint) アクセス
+テナントB Functions → テナントA Graph (SharePoint) アクセス
 認証方式: Managed Identity + Workload Identity Federation
 
 認証フロー:
   1. UAMI (User Assigned Managed Identity) で api://AzureADTokenExchange トークンを取得
-  2. そのトークンを Client Assertion として TenantA 向け Graph トークンを取得
-  3. Graph API で TenantA の SharePoint サイトへアクセス
+  2. そのトークンを Client Assertion として テナントA 向け Graph トークンを取得
+  3. Graph API で テナントA の SharePoint サイトへアクセス
 """
 
 import hashlib
@@ -78,9 +78,9 @@ def _build_assertion_func(mi_client_id: Optional[str] = None) -> Callable[[], st
 def _get_graph_token() -> str:
     """
     Workload Identity Federation でクロステナント Graph トークンを取得する。
-    - TENANT_A_ID         : アクセス先 (TenantA) のテナント ID
-    - APP_CLIENT_ID       : TenantB で作成した Multitenant アプリの Client ID
-    - MANAGED_IDENTITY_CLIENT_ID : TenantB の UAMI Client ID (省略時はシステム割当)
+    - TENANT_A_ID         : アクセス先 (テナントA) のテナント ID
+    - APP_CLIENT_ID       : テナントB で作成した Multitenant アプリの Client ID
+    - MANAGED_IDENTITY_CLIENT_ID : テナントB の UAMI Client ID (省略時はシステム割当)
     """
     tenant_a_id = _get_env("TENANT_A_ID")
     app_client_id = _get_env("APP_CLIENT_ID")
@@ -641,7 +641,7 @@ def _ingest_sites(
 @app.route(route="graph/cross-tenant-ingest", methods=["GET"])
 def graph_cross_tenant_ingest_http(req: func.HttpRequest) -> func.HttpResponse:
     """
-    HTTP Trigger: TenantA の SharePoint サイトからドキュメントを取得・処理し、
+    HTTP Trigger: テナントA の SharePoint サイトからドキュメントを取得・処理し、
     チャンク化されたドキュメント一覧を返す (AI Search アップロードなし)。
 
     クエリパラメータ:
@@ -682,7 +682,7 @@ def graph_cross_tenant_ingest_http(req: func.HttpRequest) -> func.HttpResponse:
 @app.function_name(name="GraphCrossTenantScanHttp")
 @app.route(route="graph/cross-tenant-scan", methods=["GET"])
 def graph_cross_tenant_scan_http(req: func.HttpRequest) -> func.HttpResponse:
-    """HTTP Trigger: TenantA の SharePoint サイトをスキャンして結果を返す"""
+    """HTTP Trigger: テナントA の SharePoint サイトをスキャンして結果を返す"""
     try:
         result = _scan_sites()
         return func.HttpResponse(
@@ -707,7 +707,7 @@ def graph_cross_tenant_scan_http(req: func.HttpRequest) -> func.HttpResponse:
     use_monitor=True,
 )
 def graph_cross_tenant_scan_timer(timer: func.TimerRequest) -> None:
-    """Timer Trigger: 定期実行で TenantA の SharePoint サイトをスキャン"""
+    """Timer Trigger: 定期実行で テナントA の SharePoint サイトをスキャン"""
     try:
         result = _scan_sites()
         logging.info(

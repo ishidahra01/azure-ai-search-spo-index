@@ -1,12 +1,15 @@
-# TenantB Graph Function — クロステナント Graph アクセス検証
+# テナントB Graph Function — クロステナント Graph アクセス検証（Workload Identity Federation 方式）
 
-このフォルダは、**TenantB の Azure Functions** から **TenantA の SharePoint (Graph API)** へ
-Workload Identity Federation を使ってアクセスする構成の検証用です。
+このフォルダは、`docs/entra-graph-security-and-batch-runbook.md` の `5.3.3`（テナントA 側アプリ登録方式）を Workload Identity Federation で実装した検証用 Azure Functions です。
+
+> **テナント定義**
+> - **テナントA**: 取得元の SharePoint Online (SPO) が存在するテナント
+> - **テナントB**: SPO のデータを取得するアプリの実行基盤があるテナント（このFunctionのデプロイ先）
 
 ## 構成概要
 
 ```
-TenantB
+テナントB（実行基盤）
  ├ Azure Functions
  │   └ User Assigned Managed Identity (UAMI)
  │
@@ -15,7 +18,7 @@ TenantB
 
               ↓ admin consent
 
-TenantA
+テナントA（SPO）
  └ Enterprise Application
       └ Microsoft Graph: Sites.Selected
       └ SharePoint Site Permission
@@ -29,14 +32,14 @@ TenantA
 ## 認証フロー
 
 1. Azure Functions が UAMI で `api://AzureADTokenExchange` トークンを取得
-2. そのトークンを Client Assertion として TenantA 向け Graph トークンを取得
-3. Graph API で TenantA の SharePoint サイトへアクセス
+2. そのトークンを Client Assertion として テナントA 向け Graph トークンを取得
+3. Graph API で テナントA の SharePoint サイトへアクセス
 
 ---
 
 ## セットアップ手順
 
-### 1. TenantB 側：Entra ID アプリ登録
+### 1. テナントB 側：Entra ID アプリ登録
 
 1. Azure Portal → Microsoft Entra ID → アプリの登録 → 新規登録
 2. 設定:
@@ -54,7 +57,7 @@ TenantA
 | アプリケーション (Client) ID | `APP_CLIENT_ID` で使用 |
 | ディレクトリ (Tenant) ID | 認証時に使用 |
 
-### 2. TenantB 側：User Assigned Managed Identity 作成
+### 2. テナントB 側：User Assigned Managed Identity 作成
 
 1. Azure Portal → Managed Identity → User Assigned を作成
 2. 取得する情報:
@@ -64,12 +67,12 @@ TenantA
 | Client ID | `MANAGED_IDENTITY_CLIENT_ID` で使用 |
 | Object ID | Federated Credential で使用 |
 
-### 3. TenantB 側：Functions に UAMI を割り当て
+### 3. テナントB 側：Functions に UAMI を割り当て
 
 1. Azure Functions → ID → ユーザー割り当て → 追加
 2. 作成した UAMI を選択
 
-### 4. TenantB 側：Federated Credential 作成
+### 4. テナントB 側：Federated Credential 作成
 
 1. Entra ID → アプリの登録 → 作成したアプリ
 2. 証明書とシークレット → Federated credentials → Add credential
@@ -85,11 +88,11 @@ TenantA
 
 | 項目 | 値 |
 |------|------|
-| Issuer | `https://login.microsoftonline.com/<TenantB>/v2.0` |
+| Issuer | `https://login.microsoftonline.com/<テナントB-ID>/v2.0` |
 | Audience | `api://AzureADTokenExchange` |
 | Subject | Managed Identity Object ID |
 
-### 5. TenantB 側：Graph API 権限追加
+### 5. テナントB 側：Graph API 権限追加
 
 1. アプリの登録 → API のアクセス許可 → アクセス許可の追加
 2. 設定:
@@ -102,19 +105,19 @@ TenantA
 
 > ※ この時点では Admin Consent は不要
 
-### 6. TenantA 側：Admin Consent 実行
+### 6. テナントA 側：Admin Consent 実行
 
-TenantA 管理者に以下 URL を実行してもらいます:
+テナントA 管理者に以下 URL を実行してもらいます:
 
 ```
-https://login.microsoftonline.com/<TenantA-ID>/adminconsent
-  ?client_id=<TenantB-App-ClientID>
+https://login.microsoftonline.com/<テナントA-ID>/adminconsent
+  ?client_id=<テナントB-App-ClientID>
   &redirect_uri=http://localhost
 ```
 
-成功すると TenantA に **Enterprise Application** が作成されます。
+成功すると テナントA に **Enterprise Application** が作成されます。
 
-### 7. TenantA 側：SharePoint サイト権限付与
+### 7. テナントA 側：SharePoint サイト権限付与
 
 `grant-sites-selected.ps1` を編集して実行します。
 
@@ -147,10 +150,10 @@ cd verification/tenant-b-graph-function
 
 | 変数名 | 必須 | 説明 |
 |--------|------|------|
-| `TENANT_A_ID` | ○ | アクセス先 TenantA のテナント ID |
-| `APP_CLIENT_ID` | ○ | TenantB で作成した Multitenant アプリの Client ID |
+| `TENANT_A_ID` | ○ | アクセス先テナントA のテナント ID |
+| `APP_CLIENT_ID` | ○ | テナントB で作成した Multitenant アプリの Client ID |
 | `MANAGED_IDENTITY_CLIENT_ID` | △ | UAMI の Client ID（System Assigned の場合は省略可） |
-| `SP_HOSTNAME` | ○ | TenantA の SharePoint ホスト名 |
+| `SP_HOSTNAME` | ○ | テナントA の SharePoint ホスト名 |
 | `SP_SITE_PATHS` | ○ | カンマ区切りのサイトパス |
 | `MAX_ITEMS_PER_SITE` | - | サイトあたりの取得件数 (デフォルト: 20) |
 | `GRAPH_SCAN_SCHEDULE` | ○ | Timer Trigger の cron 式 |
@@ -175,7 +178,7 @@ HTTP テスト:
 curl "http://localhost:7071/api/graph/cross-tenant-scan"
 ```
 
-### Azure へのデプロイ（TenantB）
+### Azure へのデプロイ（テナントB）
 
 ```powershell
 cd verification/tenant-b-graph-function
@@ -184,7 +187,7 @@ func azure functionapp publish <function-app-name>
 
 ---
 
-## TenantB 側から TenantA に共有する情報
+## テナントB 側から テナントA に共有する情報
 
 | 項目 | 用途 |
 |------|------|

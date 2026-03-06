@@ -191,7 +191,7 @@ jupyter notebook notebooks/
 Entra ID のアプリ登録（Graph API 実行用）の詳細手順、セキュリティ設計、
 および Azure 基盤バッチの超詳細手順（**同一テナント / 別テナント(マルチテナント)**）を以下に追加しました。
 
-- `docs/entra-graph-security-and-batch-runbook.md`
+- 📄 [`docs/entra-graph-security-and-batch-runbook.md`](./docs/entra-graph-security-and-batch-runbook.md)
 
 この Runbook には、次を含みます。
 - Delegated / App-only / Managed Identity / OIDC の使い分け
@@ -199,6 +199,21 @@ Entra ID のアプリ登録（Graph API 実行用）の詳細手順、セキュ�
 - 同一テナント構成の構築ステップ
 - マルチテナント構成の構築ステップ（admin consent とサイト割当の注意点含む）
 - 運用監査・アラート・受け入れテスト観点
+
+### マルチテナント構成 検証サンプル
+
+マルチテナント構成の検証用 Azure Functions サンプルは `verification/` に収録されています。
+
+> **テナント定義（本リポジトリ全体で統一）**
+> - **テナントA**: 取得元の SharePoint Online (SPO) が存在するテナント
+> - **テナントB**: SPO のデータを取得するアプリの実行基盤があるテナント
+
+| サンプル | 認証方式 | 対応するドキュメントセクション |
+|---|---|---|
+| [`verification/tenant-b-simple-function/`](./verification/tenant-b-simple-function/) | Managed Identity / Client Secret | [Runbook 5.3.5](./docs/entra-graph-security-and-batch-runbook.md) |
+| [`verification/tenant-b-graph-function/`](./verification/tenant-b-graph-function/) | Workload Identity Federation (UAMI) | [Runbook 5.3.3](./docs/entra-graph-security-and-batch-runbook.md) |
+
+→ 詳しくは [`verification/README.md`](./verification/README.md) を参照してください。
 
 ## ノートブック構成
 

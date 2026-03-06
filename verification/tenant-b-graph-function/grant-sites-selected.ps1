@@ -1,26 +1,26 @@
 # ============================================================
-# TenantA 側: SharePoint サイト権限付与スクリプト
+# テナントA 側: SharePoint サイト権限付与スクリプト
 # ============================================================
-# TenantB のマルチテナントアプリに対して、
-# TenantA の SharePoint サイトへの Sites.Selected 権限を付与します。
+# テナントB のマルチテナントアプリに対して、
+# テナントA の SharePoint サイトへの Sites.Selected 権限を付与します。
 #
 # 前提:
-#   - TenantA 管理者で実行
+#   - テナントA 管理者で実行
 #   - Admin Consent が完了済み (Enterprise Application が作成済み)
 #   - Microsoft.Graph モジュールがインストール済み
 # ============================================================
 
 # ====== 設定値 ======
-# TenantA のテナント ID
+# テナントA のテナント ID（SPO が存在するテナント）
 $TenantA  = "<tenant-a-id>"
 
-# TenantB で作成したマルチテナントアプリの Client ID
+# テナントB で作成したマルチテナントアプリの Client ID
 $ClientId = "<tenant-b-app-client-id>"
 
-# TenantB アプリの表示名 (任意)
+# テナントB アプリの表示名 (任意)
 $AppDisplayName = "<app-display-name>"
 
-# SharePoint ホスト名・サイトパス
+# テナントA の SharePoint ホスト名・サイトパス
 $spHost   = "<tenant-a>.sharepoint.com"
 $sitePath = "/sites/<site-name>"
 
@@ -32,7 +32,7 @@ if (-not (Get-Module -ListAvailable -Name Microsoft.Graph)) {
     Install-Module Microsoft.Graph -Scope CurrentUser -Force
 }
 
-# ====== TenantA に接続 ======
+# ====== テナントA に接続 ======
 Connect-MgGraph -TenantId $TenantA -Scopes "Sites.FullControl.All"
 
 # ====== サイト取得 ======

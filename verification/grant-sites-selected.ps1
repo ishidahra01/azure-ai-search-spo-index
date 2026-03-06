@@ -1,7 +1,8 @@
 # ====== 設定値 ======
-$Tenant  = "<your-tenant-id>"
-$ClientId = "<your-client-id>"
-$spHost   = "<your-tenant>.sharepoint.com"
+# このスクリプトは テナントA（SPO 側）で実行し、テナントB のアプリに Sites.Selected 権限を付与します
+$Tenant  = "<tenant-a-id>"       # テナントA のテナント ID（SPO が存在するテナント）
+$ClientId = "<tenant-b-app-client-id>"  # テナントB に登録したアプリの Client ID
+$spHost   = "<tenant-a>.sharepoint.com" # テナントA の SharePoint ホスト名
 $sitePath = "/sites/<your-site>"
 
 # ====== モジュール確認 ======
