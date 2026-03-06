@@ -5,10 +5,10 @@
     "FUNCTIONS_WORKER_RUNTIME": "python",
     "GRAPH_AUTH_MODE": "managed_identity",
     "MANAGED_IDENTITY_CLIENT_ID": "",
-    "GRAPH_TENANT_ID": "<tenant-b-id>",
-    "GRAPH_CLIENT_ID": "<tenant-a-app-client-id>",
+    "GRAPH_TENANT_ID": "<tenant-a-id>",
+    "GRAPH_CLIENT_ID": "<tenant-b-app-client-id>",
     "GRAPH_CLIENT_SECRET": "",
-    "SP_HOSTNAME": "<tenant-b>.sharepoint.com",
+    "SP_HOSTNAME": "<tenant-a>.sharepoint.com",
     "SP_SITE_PATHS": "/sites/hr,/sites/legal",
     "MAX_ITEMS_PER_SITE": "20",
     "GRAPH_SCAN_SCHEDULE": "0 */30 * * * *"
