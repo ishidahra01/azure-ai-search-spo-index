@@ -22,9 +22,14 @@ def _get_env(name: str, required: bool = True, default: Optional[str] = None) ->
 
 
 def _get_graph_token() -> str:
-    auth_mode = os.getenv("GRAPH_AUTH_MODE", "managed_identity").strip().lower()
+    auth_mode = os.getenv("GRAPH_AUTH_MODE", "client_secret").strip().lower()
 
     if auth_mode == "managed_identity":
+        # ⚠️ クロステナントシナリオ（テナントB → テナントA）では動作しません。
+        # テナントB の MI が取得するトークンはテナントB の Entra ID が発行したものであり、
+        # テナントA の Graph リソースへのアクセス権がありません。
+        # 同一テナント内の検証目的にのみ使用してください。
+        # クロステナントアクセスには client_secret モードを使用してください。
         mi_client_id = os.getenv("MANAGED_IDENTITY_CLIENT_ID")
         credential = ManagedIdentityCredential(client_id=mi_client_id) if mi_client_id else ManagedIdentityCredential()
         token = credential.get_token(GRAPH_SCOPE)
@@ -128,7 +133,7 @@ def _scan_sites() -> Dict[str, Any]:
         )
 
     return {
-        "authMode": os.getenv("GRAPH_AUTH_MODE", "managed_identity"),
+        "authMode": os.getenv("GRAPH_AUTH_MODE", "client_secret"),
         "hostname": hostname,
         "siteCount": len(sites_result),
         "sites": sites_result,
