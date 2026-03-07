@@ -13,37 +13,15 @@
 
 ## ディレクトリ構成
 
-### [`tenant-b-simple-function/`](./tenant-b-simple-function/)
-
-- **対応セクション**: Runbook [5.3.4](../docs/entra-graph-security-and-batch-runbook.md)（パターンB: テナントB 側アプリ登録）
-- **認証方式**: Client Secret
-- **概要**: シンプルな認証でクロステナントアクセスを検証。PoC や初期検証に最適。
-
 ### [`tenant-b-graph-function/`](./tenant-b-graph-function/)
 
-- **対応セクション**: Runbook [5.3.3](../docs/entra-graph-security-and-batch-runbook.md)（パターンA: テナントA 側アプリ登録）
+- **対応セクション**: Runbook [5.3.3](../docs/entra-graph-security-and-batch-runbook.md)（パターンA: テナントB 側アプリ登録 + Workload Identity Federation）
 - **認証方式**: Workload Identity Federation (UAMI)
-- **概要**: Secret 不要の本番向け認証方式でクロステナントアクセスを検証。
+- **概要**: Secret 不要の推奨方式でクロステナントアクセスを検証。
 
-## どちらを使うか
+## 前提条件
 
-```
-まず試したい / PoC
-  └→ tenant-b-simple-function
-        ・Client Secret でクロステナントの疎通確認
-        ・テナントA で admin consent と Sites.Selected 割当が必要
-        ・シンプルで手軽に動作確認できる
-
-本番環境 / Secret 不要構成
-  └→ tenant-b-graph-function
-        ・Workload Identity Federation (UAMI) を使用
-        ・Client Secret も証明書も不要
-        ・テナントA で admin consent と Sites.Selected 割当が必要
-```
-
-## 共通の前提条件
-
-両方のサンプルで、以下の作業がテナントA 側で必要です:
+サンプルで、以下の作業がテナントA 側で必要です:
 
 1. テナントB のアプリに対する **Admin Consent** の実行
    ```
