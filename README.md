@@ -210,8 +210,7 @@ Entra ID のアプリ登録（Graph API 実行用）の詳細手順、セキュ�
 
 | サンプル | 認証方式 | 対応するドキュメントセクション |
 |---|---|---|
-| [`verification/tenant-b-simple-function/`](./verification/tenant-b-simple-function/) | Managed Identity / Client Secret | [Runbook 5.3.5](./docs/entra-graph-security-and-batch-runbook.md) |
-| [`verification/tenant-b-graph-function/`](./verification/tenant-b-graph-function/) | Workload Identity Federation (UAMI) | [Runbook 5.3.3](./docs/entra-graph-security-and-batch-runbook.md) |
+| [`verification/tenant-b-graph-function/`](./verification/tenant-b-graph-function/) | Workload Identity Federation (UAMI) | [Runbook 5.3.4](./docs/entra-graph-security-and-batch-runbook.md) |
 
 → 詳しくは [`verification/README.md`](./verification/README.md) を参照してください。
 

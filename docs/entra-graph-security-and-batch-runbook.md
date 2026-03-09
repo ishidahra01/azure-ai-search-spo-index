@@ -349,51 +349,105 @@ Azure の実行基盤（Functions など）と SharePoint Online の組織が **
 
 ---
 
-### 5.3.2 全体設計と認証方式の2パターン
+### 5.3.2 全体設計とアプリ登録先の選択
 
-マルチテナント構成では、**アプリ登録はテナントB 側（実行基盤側）**に置き、**認証方式**によって2つのパターンがあります。
+マルチテナント構成では、まず **「アプリ登録をどちらのテナントに置くか」** を決め、次に **「認証方式」** を選択します。
 
 ```text
-                   ┌─────────────────────────────────────────────────────┐
-                   │                  マルチテナント構成                    │
-                   │                                                     │
-  テナントB         │         テナントA                                     │
-  (実行基盤)        │         (SPO データ)                                  │
-                   │                                                     │
-  ┌─────────────┐  │                        ┌───────────────────┐       │
-  │Azure Function│  │  (Enterprise App       │ SharePoint Online  │       │
-  │  + UAMI     │──┼──  として表示)     ──→  │  Sites.Selected   │       │
-  │  + Entra App│  │       ↑ admin consent  └───────────────────┘       │
-  │  (Multitenant│  │  テナントA 側で必要                                  │
-  │  + FIC)     │  │                                                     │
-  └─────────────┘  │                                                     │
-  パターンA:         │  ↑ アプリ登録はテナントB 側（FIC で認証）               │
-  (WIF, Secret不要) │                                                     │
-  ─────────────────│─────────────────────────────────────────────────────│
-  ┌─────────────┐  │                        ┌───────────────────┐       │
-  │Azure Function│  │  (Enterprise App       │ SharePoint Online  │       │
-  │  + Entra App│──┼──  として表示)     ──→  │  Sites.Selected   │       │
-  │  (Multitenant│  │       ↑ admin consent  └───────────────────┘       │
-  │  + Secret)  │  │  テナントA 側で必要                                  │
-  └─────────────┘  │                                                     │
-  パターンB:         │  ↑ アプリ登録はテナントB 側（Secret で認証）            │
-  (Client Secret,  │                                                     │
-   非推奨)          │                                                     │
-                   └─────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────────┐
+│                       マルチテナント構成                                │
+│                                                                      │
+│  【第1の選択】アプリ登録をどちらのテナントに置くか？                         │
+│                                                                      │
+│  ┌─────────────────────────────────┐  ┌────────────────────────────┐ │
+│  │ パターンA: テナントA にアプリ登録   │  │ パターンB: テナントBにアプリ登録│ │
+│  │ (データ側が管理)                  │  │ (実行基盤側が管理)           │ │
+│  │                                 │  │                            │ │
+│  │ 【第2の選択】認証方式             │  │ 【第2の選択】認証方式         │ │
+│  │                                 │  │                            │ │
+│  │  FIC (OIDC Federation):         │  │  FIC (Managed Identity):   │ │
+│  │   ・GitHub Actions OIDC         │  │   ・UAMI + FIC  ★推奨      │ │
+│  │   ・外部 OIDC issuer            │  │   ※ MI がテナントB にある    │ │
+│  │   ※ MI は使用不可               │  │     ため FIC 紐付け可能     │ │
+│  │    (MI はテナントB 発行の         │  │                            │ │
+│  │     トークンのため               │  │  FIC (OIDC Federation):    │ │
+│  │     テナントA の FIC に           │  │   ・GitHub Actions OIDC    │ │
+│  │     紐付けできない)              │  │   ・外部 OIDC issuer       │ │
+│  │                                 │  │                            │ │
+│  │  Client Secret / 証明書:        │  │  Client Secret / 証明書:   │ │
+│  │   ・非推奨                      │  │   ・非推奨                  │ │
+│  └─────────────────────────────────┘  └────────────────────────────┘ │
+│                                                                      │
+│  【共通の必須作業】                                                     │
+│  ・テナントA での admin consent                                        │
+│  ・テナントA での Sites.Selected サイト割当                               │
+└──────────────────────────────────────────────────────────────────────┘
 ```
 
 | | パターンA | パターンB |
 |---|---|---|
-| **アプリ登録場所** | テナントB（実行側） | テナントB（実行側） |
-| **認証方式** | Workload Identity Federation（UAMI） | Client Secret / 証明書 |
-| **Secret 不要** | ✅ | ❌ |
-| **複数テナント接続** | 1つのアプリで複数テナント対応可 | 1つのアプリで複数テナント対応可 |
-| **推奨度** | ★★★ 推奨 | ★ 非推奨（Secret 管理が必要） |
+| **アプリ登録場所** | テナントA（データ側） | テナントB（実行側） |
+| **FIC で使える認証元** | OIDC のみ（GitHub Actions / 外部 OIDC issuer） | **Managed Identity（UAMI）** + OIDC |
+| **FIC で MI が使えるか** | ❌（MI はテナントB 発行のため紐付け不可） | ✅（アプリと UAMI が同一テナント） |
+| **Secret 不要（Azure 実行基盤）** | ❌（MI 不可のため OIDC or Secret） | ✅（UAMI + FIC） |
+| **データガバナンス** | テナントA がアプリ管理 | テナントB がアプリ管理 |
+| **複数テナント接続** | テナントごとにアプリ登録が必要 | 1つのアプリで複数テナント対応可 |
+| **推奨度** | ガバナンス要件次第 | ★★★ 推奨（Azure 実行基盤の場合） |
 | **どちらも必須** | テナントA での admin consent + Sites.Selected 割当 ||
+
+> **Azure Functions 等の Azure 実行基盤で Secret 不要にしたい場合は、パターンB（テナントB 登録 + UAMI + FIC）が唯一の選択肢**です。パターンA では MI をFIC に紐付けできないため、Azure 実行基盤でも OIDC Federation か Client Secret が必要になります。
 
 ---
 
-### 5.3.3 パターンA: テナントB 側にアプリ登録（Workload Identity Federation）
+### 5.3.3 パターンA: テナントA 側にアプリ登録
+
+テナントA（SPO データ側）にアプリを登録するパターンです。データガバナンスの観点から、SharePoint データの所有テナントがアプリのライフサイクルを管理したい場合に採用します。
+
+#### 認証フロー（OIDC Federation の場合）
+
+```text
+[外部実行基盤 (GitHub Actions / 外部 OIDC issuer)]
+      │
+      │ 1. OIDC トークン取得（issuer / subject / audience）
+      │ 2. そのトークンを Client Assertion として使用
+      ▼
+[テナントA: Entra App (Multitenant) + Federated Credential → 外部 OIDC]
+      │  Sites.Selected 割当済み
+      ▼
+[テナントA: Graph API → SharePoint Online]
+```
+
+#### 認証フロー（Client Secret の場合 — 非推奨）
+
+```text
+[テナントB: Azure Functions / 任意の実行基盤]
+      │
+      │ 1. テナントA エンドポイント向けに client_secret でトークン取得
+      │    (https://login.microsoftonline.com/{テナントA-ID}/oauth2/v2.0/token)
+      ▼
+[テナントA: Entra App + Client Secret]
+      │  Sites.Selected 割当済み
+      ▼
+[テナントA: Graph API → SharePoint Online]
+```
+
+**設計のポイント:**
+- テナントA 側でアプリのライフサイクルを管理するため、**データガバナンスが明確**
+- FIC を使う場合の認証元は **OIDC Federation のみ**（GitHub Actions / 外部 OIDC issuer）
+- **Managed Identity は FIC に紐付けできない**（MI はテナントB の Entra ID が発行するトークンであり、テナントA のアプリの Federated Credential として設定できない）
+- Azure Functions 等の Azure 実行基盤で MI ベースの Secret 不要構成にしたい場合は、パターンB を選択すること
+- Client Secret を使う場合は Key Vault 管理必須（[原則2](#1-先に押さえる設計原則最重要) に反するため非推奨）
+
+**適用シナリオ:**
+- GitHub Actions / 外部 CI から SharePoint にアクセスする
+- テナントA の管理者がアプリの権限管理を完全に掌握したい
+- 複数の実行基盤からアクセスする場合、テナントA ごとにアプリを管理する方針
+
+---
+
+### 5.3.4 パターンB: テナントB 側にアプリ登録（Workload Identity Federation）
+
+テナントB（実行基盤側）にアプリを登録するパターンです。**Azure 実行基盤で MI ベースの Secret 不要構成が可能**なため、Azure Functions / App Service / Container Apps からのバッチ実行ではこのパターンを推奨します。
 
 ```text
 [テナントB: Azure Functions + UAMI]
@@ -413,38 +467,12 @@ Azure の実行基盤（Functions など）と SharePoint Online の組織が **
 
 **設計のポイント:**
 - テナントB 側でアプリのライフサイクルを管理（Client Secret / 証明書不要）
-- Workload Identity Federation（FIC）により、UAMI のトークンを Client Assertion として使用
+- Workload Identity Federation（FIC）により、**UAMI のトークンを Client Assertion として使用**
+- アプリと UAMI が同一テナント（テナントB）にあるため、Federated Credential の紐付けが可能
 - Federated Credential で テナントB の UAMI と紐付け（issuer/subject/audience の正確な設定が必要）
 - 複数の SharePoint テナント（テナントA, テナントA', ...）にアクセスする場合、1つのアプリで対応可能（各テナントで admin consent を取得）
 
 **詳細手順**: [`verification/tenant-b-graph-function/`](../verification/tenant-b-graph-function/)
-
----
-
-### 5.3.4 パターンB（非推奨）: テナントB 側にアプリ登録（Client Secret / 証明書）
-
-> ⚠️ **非推奨**: 本パターンは Client Secret を使用します。[原則2](#1-先に押さえる設計原則最重要)「Secret を極力使わない」に反するため、新規構築ではパターンA（WIF 方式）を推奨します。本セクションは概念の理解および既存環境の参照用として残しています。
-
-```text
-[テナントB: Azure Functions + Entra App (Multitenant) + Client Secret]
-      │
-      │ 1. テナントA エンドポイント向けにトークン取得
-      │    (https://login.microsoftonline.com/{テナントA-ID}/oauth2/v2.0/token)
-      ▼
-[テナントA: Enterprise Application（外部アプリとして表示）]
-      │  admin consent 済み
-      │  Sites.Selected 割当済み
-      ▼
-[テナントA: Graph API → SharePoint Online]
-```
-
-**設計のポイント:**
-- テナントB 側でアプリのライフサイクルを一元管理
-- 複数の SharePoint テナント（テナントA, テナントA', ...）にアクセスする場合、アプリは1つで対応可能（各テナントで admin consent を取得）
-- **Managed Identity の直接利用は不可**（テナントB の MI トークンはテナントA の Graph に届かない。テナントA エンドポイント向けの `client_secret` 認証が必要）
-- 本番環境では Client Secret を Key Vault 参照で管理すること
-
-> 検証サンプルは削除済みです。新規実装はパターンA（WIF 方式）の `verification/tenant-b-graph-function/` を参照してください。
 
 ---
 
@@ -478,19 +506,21 @@ Azure の実行基盤（Functions など）と SharePoint Online の組織が **
 
 ### 5.3.6 パターンの選択基準
 
-**パターンA（テナントB 登録 + WIF 方式）を選択すべきケース（推奨）:**
+**パターンA（テナントA 登録）を選択すべきケース:**
 
-- Secret 不要構成を実現したい（[原則2](#1-先に押さえる設計原則最重要) に沿った構成）
-- Workload Identity Federation が使用可能な環境（Azure Functions + User Assigned Managed Identity）
-- 単一または複数テナント連携（マルチテナントアプリとして対応可能）
+- データガバナンス優先: SharePoint データの所有者（テナントA）がアプリのライフサイクルも管理したい
+- GitHub Actions / 外部 CI からのアクセスが主体（OIDC Federation を活用）
+- データ漏洩時の責任所在をデータ側テナントに明確化したい
+- ただし、Azure 実行基盤で MI ベースの Secret 不要構成は**実現できない**点に注意
 
-**パターンB（テナントB 登録 + Client Secret 方式）を使う場合（非推奨・代替）:**
+**パターンB（テナントB 登録 + WIF）を選択すべきケース（推奨）:**
 
-- WIF が使用できない環境や制約がある場合のみ
-- Client Secret は Key Vault 参照で管理し、アプリ設定への直接埋め込みは厳禁
-- WIF への移行を計画すること
+- Azure Functions 等の Azure 実行基盤で **Secret 不要構成**を実現したい（UAMI + FIC）
+- 実行基盤側で認証管理を集中したい（アプリのライフサイクル管理を実行側で統一）
+- 複数テナント接続が必要: テナントB の実行基盤から複数の SharePoint テナントにアクセス
+- テナントA 側の管理負荷を軽減したい（テナントA は consent と Sites.Selected のみ）
 
-**推奨**: **パターンA（WIF 方式）**で構築する。やむを得ず Secret が必要な場合は一時的な代替としてパターンB を使用し、早期の WIF 移行を計画する。
+**推奨**: Azure 実行基盤の場合は **パターンB（テナントB 登録 + UAMI + WIF）** で構築する。GitHub Actions 等の外部 CI が主体の場合は パターンA も選択肢に入る。
 
 > 重要: どちらのパターンでも、テナントA での admin consent と Sites.Selected 割当は必須です。
 
