@@ -1,6 +1,6 @@
 # テナントB Graph Function — クロステナント Graph アクセス検証（Workload Identity Federation 方式）
 
-このフォルダは、`docs/entra-graph-security-and-batch-runbook.md` の `5.3.3`（テナントA 側アプリ登録方式）を Workload Identity Federation で実装した検証用 Azure Functions です。
+このフォルダは、`docs/entra-graph-security-and-batch-runbook.md` の `5.3.3`（パターンA: テナントB 側アプリ登録 + Workload Identity Federation 方式）を検証するための Azure Functions です。
 
 > **テナント定義**
 > - **テナントA**: 取得元の SharePoint Online (SPO) が存在するテナント
